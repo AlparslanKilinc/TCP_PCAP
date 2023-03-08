@@ -84,29 +84,24 @@ def get_cong_window(flow):
     flow_array=flows[flow]
     cong_window=[]
     count=0
-    recv=0
-    data=0
+    max_count=0
+
     #  packet info ("Sender",tcp.seq,tcp.ack,tcp.win,tcp,ts))
     for index in range(3,len(flow_array)):
         # Sender Recv a packet 1-RTT , window has slide. cwnd reached.
         if len(cong_window)==3:
             break
-        if flow_array[index][0]=="Receiver":
-                    recv+=1
-                    # Once all the SEQ from the sender is ACK from the receiver append the amount of bytes
-                    if count==recv:
-                        cong_window.append(data)
-                        count=0
-                        recv=0
-                        data=0
         # Sender ACK
-        if flow_array[index][0]=="Sender" and recv==0:
+        if flow_array[index][0]=="Sender":
             count+=1
-            data+=len(flow_array[index][-2])
-
+                
+        if flow_array[index][0]=="Receiver":
+            if max_count<count:
+                max_count=count
+                cong_window.append(max_count)
+            count=0
+            
     return cong_window
-
-
 
 
 def get_retransmission(flow):
