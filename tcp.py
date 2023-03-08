@@ -78,22 +78,24 @@ def get_cong_window(flow):
     # Congestion window size will grow with the sliding window, for each RTT-intervals. 
     # we will count the amount of acks sent that will be our cwnd in a RTT.
     # TCP sends a ACK for each packet received so, if the sender send a certain amount of ACKS before recv respond.
-    #that will be the amount of the cwnd and it will grow as such until it sees a loss. 
+    # that will be the amount of the cwnd and it will grow as such until it sees a loss. 
     # if lost based congestion control is implemented.
-
     # We will consider the packets after the 3-way handshake.
     flow_array=flows[flow]
     count=0
     cong_window=[]
+    max_window=0
     for index in range(3,len(flow_array)):
         # Sender Recv a packet 1-RTT , window has slide. cwnd reached.
         if len(cong_window)==3:
             break
-        if flow_array[index][0]=="Receiver":
-            cong_window.append(count)
-            count=0
+        if flow_array[index][0]=="Receiver" and tcp.flags & dpkt.tcp.TH_ACK:
+                if count>max_window:
+                    max_window=count
+                    cong_window.append(count)
+                    count=0
         # Sender ACK
-        if flow_array[index][0]=="Sender":
+        if flow_array[index][0]=="Sender" and tcp.flags & dpkt.tcp.TH_ACK:
             count+=len(flow_array[index][-2])
 
     return cong_window
@@ -101,76 +103,66 @@ def get_cong_window(flow):
 
 
 
-        
-        
+def get_retransmission(flow):
+    retransmissions=defaultdict(list)
+    # loop through the flow and find when retransmission from sender happens by sequence number repeat.
+    num_ack=[]
+    array=[]
+    flow_array=flows[flow]
+    for index,packet in enumerate(flow_array):
+        # check sender
+        if packet[0]=="Sender":
+            retransmissions[packet[1]].append(index)
+
+    # For each retransmission check the range for when acks in between happened
+    for seq,rang in retransmissions.items():
+        if(len(rang) < 2): continue
+        count=0
+        start, end = rang
+        for i in range(start,end+1):
+            if flow_array[i][0]=="Receiver":
+                if flow_array[i][2]==seq:
+                    count+=1
+        num_ack.append(count)
+    
+
+    triple_dup = other = timeout = 0
+
+    for val in num_ack:
+        if val<2 and val>0:
+            timeout += 1
+            # timeout 
+        elif val>=3:
+            triple_dup += 1
+            # triple ack
+        else:
+            other += 1
+            # neither
+    array.append(triple_dup)
+    array.append(timeout)
+    array.append(other)
+    return array
 
 
 
-# Flow Count 
-print("Flow Count",len(flows))
-# Flow 1 Information 
-print("Flow 1:")
-flow_1=get_flow_info(flows,1)
-print("Source IP:" ,flow_1[0],"Source Port",flow_1[1])
-print("Destination IP:", flow_1[2],"Destination Port",flow_1[3])
-t_put=get_throughput(flow_1)
-print("Throughput:",t_put)
-cong_wind=get_cong_window(flow_1)
-print("Congestion Window:",cong_wind)
-# Transactions 
-# [0] -> Sender array , [1] -> Recv array
-# X[0] transaction 1 , X[1] transaction 2
-# XX[0],XX[1],XX[2],... indicate tcp.seq ,tcp.ack ... for that packet
-print("Transaction 1")
-trs_1=get_transaction(flow_1)
+def print_flow(flows):
+    print("Flow Count",len(flows))
+    for i in range(len(flows)):
+        flow=get_flow_info(flows,i+1)
+        print("Source IP:" ,flow[0],"Source Port",flow[1])
+        print("Destination IP:", flow[2],"Destination Port",flow[3])
+        t_put=get_throughput(flow)
+        print("Throughput:",t_put)
+        cong_wind=get_cong_window(flow)
+        print("Congestion Window:",cong_wind)
+        retransmissions=get_retransmission(flow)
+        print("3-ACK:",retransmissions[0],"Timeout",retransmissions[1],"Other",retransmissions[2])
+        trs=get_transaction(flow)
+        print("Transaction 1")
+        print("Sender ->"," Sequence:",trs[0][0][1]," ACK:",trs[0][0][2]," Receive Window:",trs[0][0][3])
+        print("Receiver ->"," Sequence:",trs[1][0][1]," ACK:",trs[1][0][2]," Receive Window:",trs[1][0][3])
+        print("Transaction 2")
+        print("Sender ->"," Sequence:",trs[0][1][1]," ACK:",trs[0][1][2]," Receive Window:",trs[0][1][3])
+        print("Receiver ->"," Sequence:",trs[1][1][1]," ACK:",trs[1][1][2]," Receive Window:",trs[1][1][3])
 
-print("Sender ->"," Sequence:",trs_1[0][0][1]," ACK:",trs_1[0][0][2]," Receive Window:",trs_1[0][0][3])
-print("Receiver ->"," Sequence:",trs_1[1][0][1]," ACK:",trs_1[1][0][2]," Receive Window:",trs_1[1][0][3])
-
-print("Transaction 2")
-print("Sender ->"," Sequence:",trs_1[0][1][1]," ACK:",trs_1[0][1][2]," Receive Window:",trs_1[0][1][3])
-print("Receiver ->"," Sequence:",trs_1[1][1][1]," ACK:",trs_1[1][1][2]," Receive Window:",trs_1[1][1][3])
-
-# Flow 2 Information 
-print("Flow 2:")
-flow_2=get_flow_info(flows,2)
-print("Source IP:" ,flow_2[0],"Source Port",flow_2[1])
-print("Destination IP:", flow_2[2],"Destination Port",flow_2[3])
-t_put=get_throughput(flow_2)
-print("Throughput:",t_put)
-cong_wind=get_cong_window(flow_2)
-print("Congestion Window:",cong_wind)
-# Transactions 
-# trs_1 [0] -> Sender array  trs_1[1] -> Recv array
-# trs_1 X[0] transaction 1 , trs_1 X[1] transaction 2
-print("Transaction 1")
-trs_2=get_transaction(flow_2)
-
-print("Sender ->"," Sequence:",trs_2[0][0][1]," ACK:",trs_2[0][0][2]," Receive Window:",trs_2[0][0][3])
-print("Receiver ->"," Sequence:",trs_2[1][0][1]," ACK:",trs_2[1][0][2]," Receive Window:",trs_2[1][0][3])
-
-print("Transaction 2")
-print("Sender ->"," Sequence:",trs_2[0][1][1]," ACK:",trs_2[0][1][2]," Receive Window:",trs_2[0][1][3])
-print("Receiver ->"," Sequence:",trs_2[1][1][1]," ACK:",trs_2[1][1][2]," Receive Window:",trs_2[1][1][3])
-
-# Flow 3 Information 
-print("Flow 3:")
-flow_3=get_flow_info(flows,3)
-print("Source IP:" ,flow_3[0],"Source Port",flow_3[1])
-print("Destination IP:", flow_3[2],"Destination Port",flow_3[3])
-t_put=get_throughput(flow_3)
-print("Throughput:",t_put)
-cong_wind=get_cong_window(flow_3)
-print("Congestion Window:",cong_wind)
-# Transactions 
-# trs_1 [0] -> Sender array  trs_1[1] -> Recv array
-# trs_1 X[0] transaction 1 , trs_1 X[1] transaction 2
-print("Transaction 1")
-trs_3=get_transaction(flow_3)
-
-print("Sender ->"," Sequence:",trs_3[0][0][1]," ACK:",trs_3[0][0][2]," Receive Window:",trs_3[0][0][3])
-print("Receiver ->"," Sequence:",trs_3[1][0][1]," ACK:",trs_3[1][0][2]," Receive Window:",trs_3[1][0][3])
-
-print("Transaction 2")
-print("Sender ->"," Sequence:",trs_3[0][1][1]," ACK:",trs_3[0][1][2]," Receive Window:",trs_3[0][1][3])
-print("Receiver ->"," Sequence:",trs_3[1][1][1]," ACK:",trs_3[1][1][2]," Receive Window:",trs_3[1][1][3])
+print_flow(flows)
