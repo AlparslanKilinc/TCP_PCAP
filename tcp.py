@@ -82,21 +82,27 @@ def get_cong_window(flow):
     # if lost based congestion control is implemented.
     # We will consider the packets after the 3-way handshake.
     flow_array=flows[flow]
-    count=0
     cong_window=[]
-    max_window=0
+    count=0
+    recv=0
+    data=0
+    #  packet info ("Sender",tcp.seq,tcp.ack,tcp.win,tcp,ts))
     for index in range(3,len(flow_array)):
         # Sender Recv a packet 1-RTT , window has slide. cwnd reached.
         if len(cong_window)==3:
             break
-        if flow_array[index][0]=="Receiver" and tcp.flags & dpkt.tcp.TH_ACK:
-                if count>max_window:
-                    max_window=count
-                    cong_window.append(count)
-                    count=0
+        if flow_array[index][0]=="Receiver":
+                    recv+=1
+                    # Once all the SEQ from the sender is ACK from the receiver append the amount of bytes
+                    if count==recv:
+                        cong_window.append(data)
+                        count=0
+                        recv=0
+                        data=0
         # Sender ACK
-        if flow_array[index][0]=="Sender" and tcp.flags & dpkt.tcp.TH_ACK:
-            count+=len(flow_array[index][-2])
+        if flow_array[index][0]=="Sender" and recv==0:
+            count+=1
+            data+=len(flow_array[index][-2])
 
     return cong_window
 
@@ -105,20 +111,28 @@ def get_cong_window(flow):
 
 def get_retransmission(flow):
     retransmissions=defaultdict(list)
-    # loop through the flow and find when retransmission from sender happens by sequence number repeat.
+    # loop through the flow and find when retransmission from sender by sequence number repeat.
     num_ack=[]
     array=[]
     flow_array=flows[flow]
     for index,packet in enumerate(flow_array):
         # check sender
+        #  packet info ("Sender",tcp.seq,tcp.ack,tcp.win,tcp,ts))
         if packet[0]=="Sender":
+            # get sequence number and the index in the flow if we get same seq it will indicate re-transmission
             retransmissions[packet[1]].append(index)
 
     # For each retransmission check the range for when acks in between happened
     for seq,rang in retransmissions.items():
+        # indication no retransmission 
         if(len(rang) < 2): continue
         count=0
         start, end = rang
+        # Inspect the packets from when the sender sent the seq and when it retransmit again
+        # the packets in between will tell us how many ack 
+        # the receiver needs to send the ack that is equal to the ack we will count how many times this happens.
+        # if more than or equal to 3 Triple ack less means timeout
+        # if we get ack's that are different than the seq it will mean that it retransmitted for other reasons.
         for i in range(start,end+1):
             if flow_array[i][0]=="Receiver":
                 if flow_array[i][2]==seq:
