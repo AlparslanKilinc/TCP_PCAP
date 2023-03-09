@@ -4,7 +4,7 @@ from dpkt.compat import compat_ord
 import datetime
 from collections import defaultdict
 
-# Function to get IP Address converted
+# Function to get IP Address converted instead of hardcoding the IP addresses.
 def inet_to_str(inet):
     try:
         return socket.inet_ntop(socket.AF_INET, inet)
@@ -49,7 +49,7 @@ def get_transaction(flow):
     flow_array=flows[flow]
     sender=[]
     receiver=[]
-    # Return the Transaction requested which will be 1 sender , 1 receiver ACK 
+    # Return the Transaction requested 
     # Start from index 2 which is after 3-way handshake
     for index in range(2,len(flow_array)):
         if flow_array[index][0]=="Sender" and len(sender)<2:
@@ -76,13 +76,11 @@ def get_throughput(flow):
 
 def get_cong_window(flow):
     # Congestion window size will grow with the sliding window, for each RTT-intervals. 
-    # we will count the amount of acks sent that will be our cwnd in a RTT.
-    # TCP sends a ACK for each packet received so, if the sender sent a certain amount of ACKS before recv respond.
-    # that will be the amount of the cwnd and it will grow as such until it sees a loss. 
+    # we will count the amount of acks sent in a RTT.
+    # TCP sends a ACK for each packet received so, if the sender sent a certain amount of ACKS before recv respond,
+    # that will be the size of the cwnd and it will grow as such until it sees a loss. 
     # if lost based congestion control is implemented.
     # We will consider the packets after the 3-way handshake.
-    # we will count all the acks sender sent and once we see recevier respond then we will append that as our fist congestion window.
-    # Estiamted like Tahoe implemntation. recevier will have to send same amount of acks as response.
     flow_array=flows[flow]
     cong_window=[]
     count=0
@@ -93,7 +91,7 @@ def get_cong_window(flow):
         # Sender Recv a packet 1-RTT , window has slide. cwnd reached.
         if len(cong_window)==3:
             break
-        # Sender ACK
+
         if flow_array[index][0]=="Sender":
             count+=1
                 
@@ -130,16 +128,14 @@ def get_retransmission(flow):
         start, end = rang
         # Inspect the packets from when the sender sent the seq and when it retransmit again
         # the packets in between will tell us how many ack 
-        # the receiver needs to send the ack that is equal to the ack we will count how many times this happens.
-        # if more than or equal to 3 Triple ack less means timeout
-        # if we get ack's that are different than the seq it will mean that it retransmitted for other reasons.
+        # the receiver needs to send the ack that is equal to the seq we will count how many times this happens.
         for i in range(start,end+1):
             if flow_array[i][0]=="Receiver":
                 if flow_array[i][2]==seq:
                     count+=1
         num_ack.append(count)
     
-    # checking the amount of acks to see which ones happened with in the flow 
+    # checking the amount of acks to see what they indicate.
     for val in num_ack:
         if val<2 and val>0:
             timeout += 1
