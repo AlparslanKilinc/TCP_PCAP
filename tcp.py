@@ -22,7 +22,7 @@ with open('./assignment2.pcap', 'rb') as given_file:
             ip=eth.data
         if isinstance(ip.data,dpkt.tcp.TCP):
             tcp=ip.data
-# We Will Differentiate Each Flow by Their src_IP , src_Port , dst_IP , dst_Port.
+        # We Will Differentiate Each Flow by Their src_IP , src_Port , dst_IP , dst_Port.
         flow=(inet_to_str(ip.src),tcp.sport,inet_to_str(ip.dst),tcp.dport)
         reverse=(inet_to_str(ip.dst),tcp.dport,inet_to_str(ip.src),tcp.sport)
         # If reverse is in flows it means that this is packet is from the receiver
@@ -77,10 +77,12 @@ def get_throughput(flow):
 def get_cong_window(flow):
     # Congestion window size will grow with the sliding window, for each RTT-intervals. 
     # we will count the amount of acks sent that will be our cwnd in a RTT.
-    # TCP sends a ACK for each packet received so, if the sender send a certain amount of ACKS before recv respond.
+    # TCP sends a ACK for each packet received so, if the sender sent a certain amount of ACKS before recv respond.
     # that will be the amount of the cwnd and it will grow as such until it sees a loss. 
     # if lost based congestion control is implemented.
     # We will consider the packets after the 3-way handshake.
+    # we will count all the acks sender sent and once we see recevier respond then we will append that as our fist congestion window.
+    # Estiamted like Tahoe implemntation. recevier will have to send same amount of acks as response.
     flow_array=flows[flow]
     cong_window=[]
     count=0
@@ -107,6 +109,9 @@ def get_cong_window(flow):
 def get_retransmission(flow):
     retransmissions=defaultdict(list)
     # loop through the flow and find when retransmission from sender by sequence number repeat.
+    ack_3=0
+    timeout=0
+    other=0
     num_ack=[]
     array=[]
     flow_array=flows[flow]
@@ -134,20 +139,18 @@ def get_retransmission(flow):
                     count+=1
         num_ack.append(count)
     
-
-    triple_dup = other = timeout = 0
-
+    # checking the amount of acks to see which ones happened with in the flow 
     for val in num_ack:
         if val<2 and val>0:
             timeout += 1
             # timeout 
         elif val>=3:
-            triple_dup += 1
+            ack_3 += 1
             # triple ack
         else:
             other += 1
             # neither
-    array.append(triple_dup)
+    array.append(ack_3)
     array.append(timeout)
     array.append(other)
     return array
